@@ -82,7 +82,20 @@
   async function logout() {
     try { await send('POST', '/auth/logout'); } catch {}
     clearSession();
+    store.remove(MOCK_KEY);
     location.replace('index.html');
+  }
+
+  // Demo account: signs in against mock-api.js with sample data. It never touches the real API.
+  const DEMO_EMAIL = 'affiliate@test.test';
+  const DEMO_PASSWORD = 'TestTest';
+
+  async function demoLogin(email, password) {
+    if (email.toLowerCase() !== DEMO_EMAIL || password !== DEMO_PASSWORD) return false;
+    const result = await window.MockApi.handle('POST', '/auth/verify', { token: window.MockApi.LOGIN_TOKEN });
+    store.set(MOCK_KEY, '1');
+    setSession(result.body);
+    return true;
   }
 
   window.Api = {
@@ -94,6 +107,8 @@
     updateCreator,
     requireSession,
     logout,
+    DEMO_EMAIL,
+    demoLogin,
     get: (path) => send('GET', path),
     post: (path, body) => send('POST', path, body ?? {}),
     patch: (path, body) => send('PATCH', path, body ?? {}),

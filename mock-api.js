@@ -1,7 +1,7 @@
 // In-browser stand-in for the CRM's affiliate API, following CONTRACT.md §4 exactly.
 // Only used when the page runs with ?mock=1. State persists in localStorage so added videos stick.
 (function () {
-  const DB_KEY = 'efa_mock_db_v2';
+  const DB_KEY = 'efa_mock_db_v3';
   const SESSION_TOKEN = 'mock-session';
   const LOGIN_TOKEN = 'mock-token';
   const DAY = 86400000;
@@ -13,7 +13,7 @@
   function seed() {
     const t = Date.now();
     const creator = {
-      id: 'creator-mock', name: 'Jordan Rivera', email: 'jordan@example.com', phone: null,
+      id: 'creator-mock', name: 'Jordan Rivera', email: 'affiliate@test.test', phone: null,
       instagram: 'jordanrivera', tiktok: 'jordanrivera', youtube: null, country: 'US',
       payout_method: 'paypal', payout_details_last4: 'j•••@example.com', tax_form_received: true
     };

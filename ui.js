@@ -72,7 +72,7 @@
           ${link('settings.html', 'settings', 'Settings')}
         </nav>
         <div class="header-right">
-          ${window.Api.isMock ? '<span class="mock-badge" title="Using sample data (?mock=0 to turn off)">Mock data</span>' : ''}
+          ${window.Api.isMock ? '<span class="mock-badge" title="Sample data. Sign out to leave demo mode.">Demo data</span>' : ''}
           <span class="avatar" title="${esc(name)}">${esc(initials)}</span>
           <button class="btn-link" id="signout">Sign out</button>
         </div>

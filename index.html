@@ -21,6 +21,11 @@
           <label for="email">Email</label>
           <input class="input" id="email" type="email" autocomplete="email" inputmode="email" required placeholder="you@example.com">
         </div>
+        <div class="field" id="password-field" hidden>
+          <label for="password">Password</label>
+          <input class="input" id="password" type="password" autocomplete="current-password">
+          <div class="hint">Demo account: signs in with sample data.</div>
+        </div>
         <button class="btn" type="submit" id="submit">Email me a sign-in link</button>
         <div class="form-error" id="error" role="alert" hidden></div>
       </form>
@@ -39,10 +44,24 @@
   const errorEl = document.getElementById('error');
   const submit = document.getElementById('submit');
 
+  const emailInput = document.getElementById('email');
+  const passwordField = document.getElementById('password-field');
+  const isDemo = () => emailInput.value.trim().toLowerCase() === Api.DEMO_EMAIL;
+  emailInput.addEventListener('input', () => {
+    passwordField.hidden = !isDemo();
+    submit.textContent = isDemo() ? 'Sign in' : 'Email me a sign-in link';
+  });
+
   form.addEventListener('submit', async (event) => {
     event.preventDefault();
-    const email = document.getElementById('email').value.trim();
+    const email = emailInput.value.trim();
     errorEl.hidden = true;
+    if (isDemo()) {
+      if (await Api.demoLogin(email, document.getElementById('password').value)) return location.replace('dashboard.html');
+      errorEl.textContent = 'Wrong password.';
+      errorEl.hidden = false;
+      return;
+    }
     if (!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email)) {
       errorEl.textContent = 'Enter a valid email address.';
       errorEl.hidden = false;
