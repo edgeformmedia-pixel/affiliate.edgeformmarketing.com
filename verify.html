@@ -1,0 +1,45 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Signing in · Edgeform Affiliates</title>
+<link rel="icon" href="assets/favicon.svg" type="image/svg+xml">
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link href="https://fonts.googleapis.com/css2?family=DM+Mono:wght@400;500&family=DM+Sans:wght@400;500;600&display=swap" rel="stylesheet">
+<link rel="stylesheet" href="app.css">
+</head>
+<body>
+<div class="auth">
+  <div class="auth-card">
+    <div class="brand"><span class="brand-mark">E</span><span>Edgeform <em>Affiliates</em></span></div>
+    <div class="panel panel-pad" id="card">
+      <div class="state"><span class="spinner"></span>Signing you in…</div>
+    </div>
+  </div>
+</div>
+
+<script src="config.js"></script>
+<script src="mock-api.js"></script>
+<script src="api.js"></script>
+<script src="ui.js"></script>
+<script>
+  (async () => {
+    const token = new URLSearchParams(location.search).get('token');
+    // Keep the one-time token out of history.
+    history.replaceState(null, '', 'verify.html');
+    try {
+      if (!token) throw new Api.ApiError(400, 'invalid_token', '');
+      const result = await Api.post('/auth/verify', { token });
+      Api.setSession({ session_token: result.session_token, expires_at: result.expires_at, creator: result.creator });
+      location.replace('dashboard.html');
+    } catch (error) {
+      document.getElementById('card').innerHTML = `
+        <h1>Link didn't work</h1>
+        <p>${UI.esc(UI.errorMessage(error))}</p>
+        <a class="btn" href="index.html">Get a new link</a>`;
+    }
+  })();
+</script>
+</body>
+</html>

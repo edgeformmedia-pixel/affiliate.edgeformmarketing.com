@@ -1,0 +1,93 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Payouts · Edgeform Affiliates</title>
+<link rel="icon" href="assets/favicon.svg" type="image/svg+xml">
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link href="https://fonts.googleapis.com/css2?family=DM+Mono:wght@400;500&family=DM+Sans:wght@400;500;600&display=swap" rel="stylesheet">
+<link rel="stylesheet" href="app.css">
+</head>
+<body>
+<header class="app-header" id="app-header"></header>
+<main>
+  <div class="page-head">
+    <div>
+      <div class="kicker">Money</div>
+      <h1 class="page-title">Payouts</h1>
+    </div>
+  </div>
+  <section id="summary"></section>
+  <h2 class="section-title">By campaign</h2>
+  <section class="panel" id="by-campaign"></section>
+  <h2 class="section-title">Payment history</h2>
+  <section class="panel" id="payouts"></section>
+</main>
+
+<script src="config.js"></script>
+<script src="mock-api.js"></script>
+<script src="api.js"></script>
+<script src="ui.js"></script>
+<script>
+  const session = UI.shell('payouts');
+  const summaryEl = document.getElementById('summary');
+  const byCampaignEl = document.getElementById('by-campaign');
+  const payoutsEl = document.getElementById('payouts');
+  summaryEl.innerHTML = UI.loading();
+  byCampaignEl.innerHTML = UI.loading();
+  payoutsEl.innerHTML = UI.loading();
+
+  Api.get('/earnings').then(({ earnings: e }) => {
+    const creator = session.creator || {};
+    const method = creator.payout_method
+      ? `${UI.PAYOUT_METHOD[creator.payout_method] || creator.payout_method}${creator.payout_details_last4 ? ' · ' + UI.esc(creator.payout_details_last4) : ''}`
+      : '<a href="settings.html">Add a payout method</a>';
+    summaryEl.innerHTML = `
+      <div class="stats fade-in">
+        <div class="stat"><div class="kicker">Owed to you</div><div class="stat-val">${UI.money(e.owed_cents, e.currency)}</div></div>
+        <div class="stat"><div class="kicker">Still counting</div><div class="stat-val">${UI.money(e.pending_cents, e.currency)}</div></div>
+        <div class="stat"><div class="kicker">Paid so far</div><div class="stat-val">${UI.money(e.paid_cents, e.currency)}</div></div>
+        <div class="stat"><div class="kicker">Paid to</div><div class="stat-val" style="font-size:16px;margin-top:9px">${method}</div></div>
+      </div>`;
+    const rows = e.by_campaign.filter(c => c.earned_cents || c.pending_cents || c.paid_cents);
+    byCampaignEl.innerHTML = rows.length ? `<div class="table-wrap"><table>
+      <thead><tr><th>Campaign</th><th class="num">Final</th><th class="num">Still counting</th><th class="num">Paid</th><th class="num">Owed</th></tr></thead>
+      <tbody>${rows.map(c => `<tr>
+        <td><a href="campaign.html?id=${encodeURIComponent(c.campaign_id)}">${UI.esc(c.campaign_name)}</a></td>
+        <td class="num">${UI.money(c.earned_cents, e.currency)}</td>
+        <td class="num">${UI.money(c.pending_cents, e.currency)}</td>
+        <td class="num">${UI.money(c.paid_cents, e.currency)}</td>
+        <td class="num"><strong>${UI.money(c.owed_cents, e.currency)}</strong></td>
+      </tr>`).join('')}</tbody></table></div>` : `<div class="empty">No earnings yet.</div>`;
+  }).catch(error => { summaryEl.innerHTML = UI.failed(error); byCampaignEl.innerHTML = ''; });
+
+  Api.get('/payouts').then(({ data }) => {
+    if (!data.length) {
+      payoutsEl.innerHTML = `<div class="empty">No payments yet. Once your videos finish counting, what you're owed is paid out monthly.</div>`;
+      return;
+    }
+    payoutsEl.innerHTML = data.map(p => `
+      <details class="payout">
+        <summary>
+          <div>
+            <div style="font-weight:500">${UI.date(p.period_start)} – ${UI.date(p.period_end)}</div>
+            <div class="small muted">${p.paid_at ? 'Paid ' + UI.date(p.paid_at) : 'Not paid yet'}${p.payment_method ? ' · ' + (UI.PAYOUT_METHOD[p.payment_method] || p.payment_method) : ''}</div>
+          </div>
+          <div class="hide-sm small muted mono">${p.payment_reference ? 'Ref ' + UI.esc(p.payment_reference) : ''}</div>
+          <div class="hide-sm">${UI.pill(UI.PAYOUT_STATUS, p.status)}</div>
+          <div class="num" style="font-weight:500">${UI.money(p.amount_cents, p.currency)}</div>
+        </summary>
+        <div class="payout-lines"><div class="table-wrap"><table>
+          <thead><tr><th>Video</th><th class="num">Views</th><th class="num">Rate</th><th class="num">Amount</th></tr></thead>
+          <tbody>${p.line_items.map(li => `<tr>
+            <td><div>${UI.esc(li.campaign_name || '')}</div>${li.canonical_url ? `<a class="small" href="${UI.esc(li.canonical_url)}" target="_blank" rel="noopener">View video</a>` : ''}</td>
+            <td class="num">${UI.number(li.billable_views)}</td>
+            <td class="num">${UI.money(li.cpm_rate_cents, p.currency)}/1K</td>
+            <td class="num">${UI.money(li.amount_cents, p.currency)}</td>
+          </tr>`).join('')}</tbody></table></div></div>
+      </details>`).join('');
+  }).catch(error => { payoutsEl.innerHTML = UI.failed(error); });
+</script>
+</body>
+</html>

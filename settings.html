@@ -1,0 +1,197 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Settings · Edgeform Affiliates</title>
+<link rel="icon" href="assets/favicon.svg" type="image/svg+xml">
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link href="https://fonts.googleapis.com/css2?family=DM+Mono:wght@400;500&family=DM+Sans:wght@400;500;600&display=swap" rel="stylesheet">
+<link rel="stylesheet" href="app.css">
+</head>
+<body>
+<header class="app-header" id="app-header"></header>
+<main style="max-width:760px">
+  <div class="page-head">
+    <div>
+      <div class="kicker">Account</div>
+      <h1 class="page-title">Settings</h1>
+    </div>
+  </div>
+
+  <h2 class="section-title" style="margin-top:0">Profile</h2>
+  <form class="panel panel-pad" id="profile-form" novalidate>
+    <div class="field-row">
+      <div class="field"><label for="name">Name</label><input class="input" id="name" autocomplete="name"></div>
+      <div class="field"><label for="email">Email</label><input class="input" id="email" disabled><div class="hint">To change your email, contact your Edgeform manager.</div></div>
+    </div>
+    <div class="field-row">
+      <div class="field"><label for="phone">Phone</label><input class="input" id="phone" type="tel" autocomplete="tel"></div>
+      <div class="field"><label for="country">Country</label><input class="input" id="country" maxlength="2" placeholder="US" style="text-transform:uppercase"></div>
+    </div>
+    <div class="field-row">
+      <div class="field"><label for="tiktok">TikTok</label><input class="input" id="tiktok" placeholder="@handle"></div>
+      <div class="field"><label for="instagram">Instagram</label><input class="input" id="instagram" placeholder="@handle"></div>
+    </div>
+    <div class="field"><label for="youtube">YouTube</label><input class="input" id="youtube" placeholder="Channel link or @handle"><div class="hint">Videos you submit need to come from these accounts.</div></div>
+    <button class="btn" type="submit">Save profile</button>
+    <div class="form-error" id="profile-error" role="alert" hidden></div>
+  </form>
+
+  <h2 class="section-title">How you get paid</h2>
+  <form class="panel panel-pad" id="payout-form" novalidate>
+    <div class="field">
+      <label for="payout_method">Payout method</label>
+      <select class="input" id="payout_method">
+        <option value="">Choose…</option>
+        <option value="paypal">PayPal</option>
+        <option value="wise">Wise</option>
+        <option value="bank">Bank transfer</option>
+        <option value="manual">Other (arranged with your manager)</option>
+      </select>
+    </div>
+    <div class="field">
+      <label for="payout_details" id="details-label">Payout details</label>
+      <input class="input" id="payout_details" autocomplete="off">
+      <div class="hint" id="details-hint"></div>
+    </div>
+    <button class="btn" type="submit">Save payout method</button>
+    <div class="form-error" id="payout-error" role="alert" hidden></div>
+  </form>
+
+  <h2 class="section-title">Connected accounts</h2>
+  <div class="panel panel-pad">
+    <p class="dim small" style="margin-top:0">Connecting lets us read your view counts straight from TikTok and Instagram, so they're more accurate. YouTube doesn't need to be connected.</p>
+    <div class="connections" id="connections"></div>
+  </div>
+</main>
+
+<script src="config.js"></script>
+<script src="mock-api.js"></script>
+<script src="api.js"></script>
+<script src="ui.js"></script>
+<script>
+  UI.shell('settings');
+  const $ = (id) => document.getElementById(id);
+  const PROFILE_FIELDS = ['name', 'phone', 'country', 'tiktok', 'instagram', 'youtube'];
+  const DETAILS = {
+    paypal: ['PayPal email', 'The email on your PayPal account.'],
+    wise: ['Wise email', 'The email on your Wise account.'],
+    bank: ['Account number', 'Your manager will ask for routing details separately.'],
+    manual: ['Notes', 'How you and your manager agreed to handle payment.'],
+    '': ['Payout details', '']
+  };
+  let creator = null;
+
+  function fill(c) {
+    creator = c;
+    Api.updateCreator(c);
+    for (const key of PROFILE_FIELDS) $(key).value = c[key] || '';
+    $('email').value = c.email || '';
+    $('payout_method').value = c.payout_method || '';
+    updateDetailsField();
+  }
+
+  function updateDetailsField() {
+    const method = $('payout_method').value;
+    const [label, hint] = DETAILS[method] || DETAILS[''];
+    $('details-label').textContent = label;
+    const onFile = creator && creator.payout_details_last4 && method === creator.payout_method;
+    $('payout_details').value = '';
+    $('payout_details').placeholder = onFile ? `On file: ${creator.payout_details_last4}. Type to replace.` : '';
+    $('details-hint').textContent = hint + (onFile ? ' Saved details are encrypted and never shown in full.' : '');
+  }
+
+  $('payout_method').addEventListener('change', updateDetailsField);
+
+  async function save(formId, errorId, body, message) {
+    const errorEl = $(errorId);
+    const btn = $(formId).querySelector('button[type=submit]');
+    errorEl.hidden = true;
+    btn.disabled = true;
+    try {
+      const { creator: updated } = await Api.patch('/me', body);
+      fill(updated);
+      UI.toast(message);
+    } catch (error) {
+      errorEl.textContent = UI.errorMessage(error);
+      errorEl.hidden = false;
+    } finally {
+      btn.disabled = false;
+    }
+  }
+
+  $('profile-form').addEventListener('submit', (event) => {
+    event.preventDefault();
+    const body = {};
+    for (const key of PROFILE_FIELDS) body[key] = $(key).value.trim();
+    body.country = body.country.toUpperCase();
+    if (!body.name) { $('profile-error').textContent = 'Name is required.'; $('profile-error').hidden = false; return; }
+    save('profile-form', 'profile-error', body, 'Profile saved.');
+  });
+
+  $('payout-form').addEventListener('submit', (event) => {
+    event.preventDefault();
+    const method = $('payout_method').value;
+    const details = $('payout_details').value.trim();
+    const errorEl = $('payout-error');
+    if (!method) { errorEl.textContent = 'Choose a payout method.'; errorEl.hidden = false; return; }
+    const needsDetails = method !== 'manual' && !(creator.payout_details_last4 && method === creator.payout_method);
+    if (needsDetails && !details) { errorEl.textContent = `Enter your ${DETAILS[method][0].toLowerCase()}.`; errorEl.hidden = false; return; }
+    if ((method === 'paypal' || method === 'wise') && details && !/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(details)) {
+      errorEl.textContent = 'Enter a valid email address.'; errorEl.hidden = false; return;
+    }
+    const body = { payout_method: method };
+    if (details) body.payout_details = details;
+    save('payout-form', 'payout-error', body, 'Payout method saved.');
+  });
+
+  async function loadConnections() {
+    const el = $('connections');
+    el.innerHTML = UI.loading();
+    try {
+      const { data } = await Api.get('/connections');
+      el.innerHTML = ['tiktok', 'instagram'].map(platform => {
+        const c = data.find(x => x.platform === platform);
+        return `<div class="connection">
+          <div>
+            <div style="font-weight:500">${UI.PLATFORM[platform]}</div>
+            <div class="small muted">${c ? `Connected as @${UI.esc(c.platform_username)} · ${UI.date(c.connected_at)}` : 'Not connected'}</div>
+          </div>
+          ${c ? `<button class="btn btn-ghost btn-sm btn-danger" data-disconnect="${platform}">Disconnect</button>`
+              : `<button class="btn btn-sm" data-connect="${platform}">Connect</button>`}
+        </div>`;
+      }).join('');
+    } catch (error) { el.innerHTML = UI.failed(error); }
+  }
+
+  $('connections').addEventListener('click', async (event) => {
+    const connect = event.target.closest('[data-connect]');
+    const disconnect = event.target.closest('[data-disconnect]');
+    try {
+      if (connect) {
+        connect.disabled = true;
+        const { authorize_url } = await Api.post(`/connections/${connect.dataset.connect}/start`);
+        location.href = authorize_url;
+      } else if (disconnect && confirm(`Disconnect ${UI.PLATFORM[disconnect.dataset.disconnect]}?`)) {
+        await Api.del(`/connections/${disconnect.dataset.disconnect}`);
+        UI.toast('Disconnected.');
+        loadConnections();
+      }
+    } catch (error) {
+      UI.toast(UI.errorMessage(error), 'error');
+      if (connect) connect.disabled = false;
+    }
+  });
+
+  // Back from the OAuth redirect (CONTRACT.md §4).
+  const params = new URLSearchParams(location.search);
+  if (params.get('connected')) UI.toast(`${UI.PLATFORM[params.get('connected')] || 'Account'} connected.`);
+  if (params.get('error')) UI.toast("Couldn't connect that account. Please try again.", 'error');
+  if (params.has('connected') || params.has('error')) history.replaceState(null, '', 'settings.html');
+
+  Api.get('/me').then(({ creator: c }) => fill(c)).catch(error => UI.toast(UI.errorMessage(error), 'error'));
+  loadConnections();
+</script>
+</body>
+</html>

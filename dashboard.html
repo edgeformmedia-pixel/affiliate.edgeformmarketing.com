@@ -1,0 +1,88 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Campaigns · Edgeform Affiliates</title>
+<link rel="icon" href="assets/favicon.svg" type="image/svg+xml">
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link href="https://fonts.googleapis.com/css2?family=DM+Mono:wght@400;500&family=DM+Sans:wght@400;500;600&display=swap" rel="stylesheet">
+<link rel="stylesheet" href="app.css">
+</head>
+<body>
+<header class="app-header" id="app-header"></header>
+<main>
+  <div class="page-head">
+    <div>
+      <div class="kicker">Your earnings</div>
+      <h1 class="page-title" id="greeting">Welcome back</h1>
+    </div>
+  </div>
+  <section id="earnings"></section>
+  <h2 class="section-title">Your campaigns</h2>
+  <section id="campaigns"></section>
+</main>
+
+<script src="config.js"></script>
+<script src="mock-api.js"></script>
+<script src="api.js"></script>
+<script src="ui.js"></script>
+<script>
+  const session = UI.shell('dashboard');
+  const firstName = ((session.creator && session.creator.name) || '').split(' ')[0];
+  if (firstName) document.getElementById('greeting').textContent = `Welcome back, ${firstName}`;
+
+  const earningsEl = document.getElementById('earnings');
+  const campaignsEl = document.getElementById('campaigns');
+  earningsEl.innerHTML = UI.loading('Loading earnings…');
+  campaignsEl.innerHTML = UI.loading('Loading campaigns…');
+
+  Api.get('/earnings').then(({ earnings: e }) => {
+    earningsEl.innerHTML = `
+      <div class="hero fade-in">
+        <div>
+          <div class="kicker">Owed to you</div>
+          <div class="hero-val">${UI.money(e.owed_cents, e.currency)}</div>
+          <div class="hero-note">Earned on videos that have finished counting, minus what's been paid.</div>
+        </div>
+        <div>
+          <div class="kicker">Still counting</div>
+          <div class="hero-sub-val">${UI.money(e.pending_cents, e.currency)}</div>
+          <div class="hero-note">Estimated. Grows as views come in.</div>
+        </div>
+        <div>
+          <div class="kicker">Paid so far</div>
+          <div class="hero-sub-val">${UI.money(e.paid_cents, e.currency)}</div>
+          <div class="hero-note"><a href="payouts.html" style="color:#a4c9b6">See payouts →</a></div>
+        </div>
+      </div>`;
+  }).catch(error => { earningsEl.innerHTML = UI.failed(error); });
+
+  Api.get('/campaigns').then(({ data }) => {
+    if (!data.length) {
+      campaignsEl.innerHTML = `<div class="panel empty">You're not in any campaigns yet. Your Edgeform manager will add you and you'll get an email.</div>`;
+      return;
+    }
+    const order = { active: 0, paused: 1, ended: 2 };
+    data.sort((a, b) => (order[a.status] ?? 3) - (order[b.status] ?? 3));
+    campaignsEl.innerHTML = `<div class="cards">${data.map((c, i) => `
+      <a class="card fade-in" style="animation-delay:${i * 50}ms" href="campaign.html?id=${encodeURIComponent(c.id)}">
+        <div class="card-top">
+          <div>
+            <div class="card-name">${UI.esc(c.name)}</div>
+            <div class="small muted" style="margin-top:4px">${UI.date(c.start_date)}${c.end_date ? ' – ' + UI.date(c.end_date) : ' · no end date'}</div>
+          </div>
+          ${UI.pill(UI.CAMPAIGN_STATUS, c.status)}
+        </div>
+        <div><span class="rate">${UI.money(c.cpm_rate_cents, c.currency)} / 1K views</span></div>
+        <div class="platforms">${c.platforms_allowed.map(p => `<span class="chip">${UI.PLATFORM[p] || p}</span>`).join('')}</div>
+        <div class="card-metrics">
+          <div><div class="kicker">Videos</div><div class="metric-val">${UI.number(c.video_count)}</div></div>
+          <div><div class="kicker">Views</div><div class="metric-val">${UI.compact(c.total_views)}</div></div>
+          <div><div class="kicker">Earned</div><div class="metric-val">${UI.money(c.earned_cents + c.pending_cents, c.currency)}</div></div>
+        </div>
+      </a>`).join('')}</div>`;
+  }).catch(error => { campaignsEl.innerHTML = UI.failed(error); });
+</script>
+</body>
+</html>

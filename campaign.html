@@ -1,0 +1,186 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Campaign · Edgeform Affiliates</title>
+<link rel="icon" href="assets/favicon.svg" type="image/svg+xml">
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link href="https://fonts.googleapis.com/css2?family=DM+Mono:wght@400;500&family=DM+Sans:wght@400;500;600&display=swap" rel="stylesheet">
+<link rel="stylesheet" href="app.css">
+</head>
+<body>
+<header class="app-header" id="app-header"></header>
+<main>
+  <a class="back" href="dashboard.html">← All campaigns</a>
+  <div id="campaign"></div>
+  <div id="videos-section" hidden>
+    <h2 class="section-title">Add a video</h2>
+    <div class="panel panel-pad" id="add-panel">
+      <form class="add-video" id="add-form" novalidate>
+        <input class="input" id="video-url" type="url" inputmode="url" autocomplete="off" placeholder="Paste your video's share link, e.g. https://www.tiktok.com/@you/video/…" aria-label="Video share link">
+        <button class="btn" type="submit" id="add-btn">Add video</button>
+      </form>
+      <div class="hint" id="add-hint"></div>
+      <div class="form-error" id="add-error" role="alert" hidden></div>
+    </div>
+
+    <h2 class="section-title">Your videos</h2>
+    <div class="panel" id="videos"></div>
+  </div>
+</main>
+
+<script src="config.js"></script>
+<script src="mock-api.js"></script>
+<script src="api.js"></script>
+<script src="ui.js"></script>
+<script>
+  UI.shell('dashboard');
+  const campaignId = new URLSearchParams(location.search).get('id');
+  const campaignEl = document.getElementById('campaign');
+  const videosEl = document.getElementById('videos');
+  let campaign = null;
+
+  if (!campaignId) location.replace('dashboard.html');
+
+  let rendered = false;
+  function renderCampaign(c) {
+    const fade = rendered ? "" : " fade-in";
+    rendered = true;
+    document.title = `${c.name} · Edgeform Affiliates`;
+    const rules = [
+      ['Pay rate', `${UI.money(c.cpm_rate_cents, c.currency)} per 1,000 views`],
+      ['Platforms', c.platforms_allowed.map(p => UI.PLATFORM[p] || p).join(', ')],
+      ['Views count for', `${c.view_tracking_window_days} days after you submit`],
+      c.min_views_to_qualify ? ['Minimum to earn', `${UI.number(c.min_views_to_qualify)} views`] : null,
+      c.max_payout_per_video_cents != null ? ['Max per video', UI.money(c.max_payout_per_video_cents, c.currency)] : null,
+      ['Approval', c.requires_video_approval ? 'Videos are reviewed first' : 'Counted right away'],
+      ['Dates', `${UI.date(c.start_date)} – ${c.end_date ? UI.date(c.end_date) : 'ongoing'}`]
+    ].filter(Boolean);
+
+    campaignEl.innerHTML = `
+      <div class="page-head">
+        <div>
+          <div class="kicker">Campaign</div>
+          <h1 class="page-title">${UI.esc(c.name)}</h1>
+        </div>
+        ${UI.pill(UI.CAMPAIGN_STATUS, c.status)}
+      </div>
+      <div class="stats${fade}">
+        <div class="stat"><div class="kicker">Rate</div><div class="stat-val">${UI.money(c.cpm_rate_cents, c.currency)}<span class="small muted"> /1K</span></div></div>
+        <div class="stat"><div class="kicker">Views</div><div class="stat-val">${UI.number(c.total_views)}</div></div>
+        <div class="stat"><div class="kicker">Final earnings</div><div class="stat-val">${UI.money(c.earned_cents, c.currency)}</div></div>
+        <div class="stat"><div class="kicker">Still counting</div><div class="stat-val">${UI.money(c.pending_cents, c.currency)}</div></div>
+      </div>
+      <div class="campaign-grid" style="margin-top:12px">
+        <div class="panel panel-pad${fade}">
+          <div class="kicker">The brief</div>
+          <p class="brief">${UI.esc(c.brief) || '<span class="muted">No brief yet.</span>'}</p>
+        </div>
+        <div class="panel panel-pad${fade}">
+          <div class="kicker" style="margin-bottom:12px">How you get paid</div>
+          <dl class="rules">${rules.map(([k, v]) => `<div><dt>${k}</dt><dd>${UI.esc(v)}</dd></div>`).join('')}</dl>
+        </div>
+      </div>`;
+
+    const accepting = c.status === 'active';
+    document.getElementById('add-form').hidden = !accepting;
+    document.getElementById('add-hint').innerHTML = accepting
+      ? `In ${c.platforms_allowed.map(p => UI.PLATFORM[p]).join(' / ')}, tap <strong>Share → Copy link</strong> on your posted video, then paste it above.`
+      : `This campaign isn't accepting new videos.`;
+    document.getElementById('videos-section').hidden = false;
+  }
+
+  function trackingNote(v) {
+    if (v.status === 'locked') return `Final count · ${UI.date(v.locked_at)}`;
+    if (v.status === 'approved') return `Counting until ${UI.date(v.tracking_ends_at)}${v.last_fetched_at ? ' · updated ' + UI.relative(v.last_fetched_at) : ' · first count soon'}`;
+    if (v.status === 'pending_review') return `Submitted ${UI.relative(v.submitted_at)}`;
+    return `Submitted ${UI.date(v.submitted_at)}`;
+  }
+
+  function renderVideos(videos) {
+    if (!videos.length) {
+      videosEl.innerHTML = `<div class="empty">No videos yet. Post your video, then paste its link above.</div>`;
+      return;
+    }
+    videosEl.innerHTML = `<div class="table-wrap"><table class="video-table">
+      <thead><tr><th>Video</th><th>Status</th><th class="num">Views</th><th class="num">Earned</th><th></th></tr></thead>
+      <tbody>${videos.map(v => {
+        const views = v.status === 'locked' ? v.billable_views : v.latest_view_count;
+        const counts = v.status === 'approved' || v.status === 'locked';
+        const belowMin = counts && campaign.min_views_to_qualify && views < campaign.min_views_to_qualify;
+        return `<tr>
+          <td class="cell-video"><div class="video-cell">
+            <div class="video-thumb" ${v.thumbnail_url ? `style="background-image:url('${UI.esc(v.thumbnail_url)}')"` : ''}>${v.thumbnail_url ? '' : (UI.PLATFORM[v.platform] || '').slice(0, 2).toUpperCase()}</div>
+            <div style="min-width:0">
+              <a class="video-title" href="${UI.esc(v.canonical_url || v.submitted_url)}" target="_blank" rel="noopener">${UI.esc(v.caption || v.canonical_url || v.submitted_url)}</a>
+              <div class="small muted">${UI.PLATFORM[v.platform] || v.platform} · ${trackingNote(v)}</div>
+              ${v.rejection_reason ? `<div class="reason">${UI.esc(v.rejection_reason)}</div>` : ''}
+            </div>
+          </div></td>
+          <td class="cell-status">${UI.pill(UI.VIDEO_STATUS, v.status)}</td>
+          <td class="num" data-label="Views">${counts ? UI.number(views) : '<span class="muted">—</span>'}${belowMin ? `<div class="small muted">needs ${UI.compact(campaign.min_views_to_qualify)}</div>` : ''}</td>
+          <td class="num" data-label="Earned">${counts ? UI.money(v.earned_cents, campaign.currency) : '<span class="muted">—</span>'}</td>
+          <td class="num cell-action">${v.status === 'pending_review' ? `<button class="btn btn-ghost btn-sm btn-danger" data-remove="${UI.esc(v.id)}">Remove</button>` : ''}</td>
+        </tr>`;
+      }).join('')}</tbody></table></div>`;
+  }
+
+  async function loadVideos() {
+    try {
+      const { data } = await Api.get(`/campaigns/${encodeURIComponent(campaignId)}/videos`);
+      renderVideos(data);
+    } catch (error) { videosEl.innerHTML = UI.failed(error); }
+  }
+
+  async function loadCampaign() {
+    try {
+      ({ campaign } = await Api.get(`/campaigns/${encodeURIComponent(campaignId)}`));
+      renderCampaign(campaign);
+    } catch (error) { campaignEl.innerHTML = UI.failed(error); }
+  }
+
+  document.getElementById('add-form').addEventListener('submit', async (event) => {
+    event.preventDefault();
+    const input = document.getElementById('video-url');
+    const btn = document.getElementById('add-btn');
+    const errorEl = document.getElementById('add-error');
+    const url = input.value.trim();
+    errorEl.hidden = true;
+    if (!url) { errorEl.textContent = 'Paste the link to your video first.'; errorEl.hidden = false; return; }
+    btn.disabled = true;
+    btn.textContent = 'Adding…';
+    try {
+      const { video } = await Api.post(`/campaigns/${encodeURIComponent(campaignId)}/videos`, { url });
+      input.value = '';
+      UI.toast(video.status === 'pending_review' ? "Video added. We'll review it shortly." : "Video added. We'll start counting views soon.");
+      await Promise.all([loadCampaign(), loadVideos()]);
+    } catch (error) {
+      errorEl.textContent = UI.errorMessage(error);
+      errorEl.hidden = false;
+    } finally {
+      btn.disabled = false;
+      btn.textContent = 'Add video';
+    }
+  });
+
+  videosEl.addEventListener('click', async (event) => {
+    const btn = event.target.closest('[data-remove]');
+    if (!btn || !confirm('Remove this video from the campaign?')) return;
+    btn.disabled = true;
+    try {
+      await Api.del(`/videos/${encodeURIComponent(btn.dataset.remove)}`);
+      UI.toast('Video removed.');
+      await Promise.all([loadCampaign(), loadVideos()]);
+    } catch (error) {
+      UI.toast(UI.errorMessage(error), 'error');
+      btn.disabled = false;
+    }
+  });
+
+  campaignEl.innerHTML = UI.loading('Loading campaign…');
+  videosEl.innerHTML = UI.loading('Loading videos…');
+  loadCampaign().then(() => campaign && loadVideos());
+</script>
+</body>
+</html>
