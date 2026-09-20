@@ -40,6 +40,19 @@
     if (session) setSession({ ...session, creator });
   }
 
+  const offline = () => new ApiError(0, 'network_error', "Couldn't reach Edgeform. Check your connection and try again.");
+
+  // Every response goes through here: 2xx returns the body, anything else throws an ApiError
+  // (and a 401 outside /auth/* drops the session and sends the creator back to the sign-in page).
+  function finish(status, data, path) {
+    if (status >= 200 && status < 300 && data.ok !== false) return data;
+    if (status === 401 && !path.startsWith('/auth/')) {
+      clearSession();
+      location.replace('index.html');
+    }
+    throw new ApiError(status, data.code || 'error', data.error || 'Something went wrong. Please try again.');
+  }
+
   async function send(method, path, body) {
     const session = getSession();
     let status, data;
@@ -56,17 +69,56 @@
           body: body === undefined ? undefined : JSON.stringify(body)
         });
       } catch {
-        throw new ApiError(0, 'network_error', "Couldn't reach Edgeform. Check your connection and try again.");
+        throw offline();
       }
       status = response.status;
       data = await response.json().catch(() => ({}));
     }
-    if (status >= 200 && status < 300 && data.ok !== false) return data;
-    if (status === 401 && !path.startsWith('/auth/')) {
-      clearSession();
-      location.replace('index.html');
+    return finish(status, data, path);
+  }
+
+  // Raw image bytes, not multipart or JSON (CONTRACT.md §7). XHR rather than fetch, because
+  // it's the only way to get a real upload progress event for a phone screenshot on slow data.
+  async function upload(path, blob, onProgress) {
+    const session = getSession();
+    if (isMock) {
+      const { status, body } = await window.MockApi.handle('POST', path, blob, session && session.session_token, onProgress);
+      return finish(status, body, path);
     }
-    throw new ApiError(status, data.code || 'error', data.error || 'Something went wrong. Please try again.');
+    return new Promise((resolve, reject) => {
+      const xhr = new XMLHttpRequest();
+      xhr.open('POST', window.PORTAL_CONFIG.API_BASE + path);
+      xhr.setRequestHeader('content-type', blob.type);
+      if (session) xhr.setRequestHeader('authorization', 'Bearer ' + session.session_token);
+      if (onProgress) xhr.upload.addEventListener('progress', (event) => {
+        if (event.lengthComputable) onProgress(event.loaded / event.total);
+      });
+      xhr.addEventListener('load', () => {
+        let data = {};
+        try { data = JSON.parse(xhr.responseText); } catch {}
+        try { resolve(finish(xhr.status, data, path)); } catch (error) { reject(error); }
+      });
+      xhr.addEventListener('error', () => reject(offline()));
+      xhr.addEventListener('abort', () => reject(offline()));
+      xhr.send(blob);
+    });
+  }
+
+  // Images behind the Bearer header, so a plain <img src> can't load them: fetch the bytes and
+  // hand back a Blob the caller turns into an object URL.
+  async function blob(path) {
+    const session = getSession();
+    if (isMock) return window.MockApi.blob(path, session && session.session_token);
+    let response;
+    try {
+      response = await fetch(window.PORTAL_CONFIG.API_BASE + path, {
+        headers: session ? { authorization: 'Bearer ' + session.session_token } : {}
+      });
+    } catch {
+      throw offline();
+    }
+    if (!response.ok) return finish(response.status, await response.json().catch(() => ({})), path);
+    return response.blob();
   }
 
   // Pages that need a signed-in creator call this first.
@@ -109,6 +161,8 @@
     logout,
     DEMO_EMAIL,
     demoLogin,
+    upload,
+    blob,
     get: (path) => send('GET', path),
     post: (path, body) => send('POST', path, body ?? {}),
     patch: (path, body) => send('PATCH', path, body ?? {}),

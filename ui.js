@@ -34,7 +34,7 @@
 
   const CAMPAIGN_STATUS = { active: ['Active', 'green'], paused: ['Paused', 'amber'], ended: ['Ended', 'muted'], draft: ['Draft', 'muted'] };
   const PAYOUT_STATUS = { pending: ['Pending', 'amber'], approved: ['Approved', 'blue'], paid: ['Paid', 'green'], failed: ['Failed', 'red'] };
-  const PAYOUT_METHOD = { paypal: 'PayPal', wise: 'Wise', bank: 'Bank transfer', manual: 'Other' };
+  const PAYOUT_METHOD = { paypal: 'PayPal', wise: 'Wise', bank: 'Bank transfer', remitly: 'Remitly', zelle: 'Zelle', manual: 'Other' };
 
   const pill = (map, key) => {
     const [label, tone] = map[key] || [key, 'muted'];
@@ -49,13 +49,20 @@
     campaign_not_active: "This campaign isn't accepting new videos right now.",
     not_assigned: "You're not part of this campaign. Contact your Edgeform manager.",
     not_deletable: 'Only videos that are still in review can be removed.',
-    not_available: "Connecting accounts isn't available yet. We'll let you know when it's ready.",
+    unsupported_image: 'Upload a PNG, JPEG or WebP image.',
+    image_too_large: 'That image is too big. Screenshots must be 10MB or smaller.',
+    video_not_tracking: "Screenshots can only be added to videos that are still being tracked.",
+    too_many_screenshots: 'This video already has the maximum of 30 screenshots.',
     invalid_token: 'This sign-in link is invalid or has expired. Request a new one below.',
     rate_limited: 'Too many attempts. Wait a few minutes and try again.',
     network_error: "Couldn't reach Edgeform. Check your connection and try again."
   };
 
-  const errorMessage = (error) => (error && ERRORS[error.code]) || (error && error.message) || 'Something went wrong. Please try again.';
+  // `overrides` lets one screen re-word a shared code — `not_deletable`, say, means something
+  // different for a video than it does for a screenshot.
+  const errorMessage = (error, overrides) =>
+    (error && overrides && overrides[error.code]) || (error && ERRORS[error.code]) ||
+    (error && error.message) || 'Something went wrong. Please try again.';
 
   // Header + nav for signed-in pages.
   function shell(active) {
