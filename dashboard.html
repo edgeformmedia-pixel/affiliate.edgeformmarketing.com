@@ -43,12 +43,12 @@
         <div>
           <div class="kicker">Owed to you</div>
           <div class="hero-val">${UI.money(e.owed_cents, e.currency)}</div>
-          <div class="hero-note">Earned on videos that have finished counting, minus what's been paid.</div>
+          <div class="hero-note">Everything you've earned so far, minus what's already been paid.</div>
         </div>
         <div>
-          <div class="kicker">Still counting</div>
+          <div class="kicker">Earning weekly</div>
           <div class="hero-sub-val">${UI.money(e.pending_cents, e.currency)}</div>
-          <div class="hero-note">Estimated. Grows as views come in.</div>
+          <div class="hero-note">Included above — from videos still active and growing each Sunday.</div>
         </div>
         <div>
           <div class="kicker">Paid so far</div>
@@ -79,7 +79,7 @@
         <div class="card-metrics">
           <div><div class="kicker">Videos</div><div class="metric-val">${UI.number(c.video_count)}</div></div>
           <div><div class="kicker">Views</div><div class="metric-val">${UI.compact(c.total_views)}</div></div>
-          <div><div class="kicker">Earned</div><div class="metric-val">${UI.money(c.earned_cents + c.pending_cents, c.currency)}</div></div>
+          <div><div class="kicker">Earned</div><div class="metric-val">${UI.money(c.earned_cents, c.currency)}</div></div>
         </div>
       </a>`).join('')}</div>`;
   }).catch(error => { campaignsEl.innerHTML = UI.failed(error); });

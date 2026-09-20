@@ -58,12 +58,6 @@
     <button class="btn" type="submit">Save payout method</button>
     <div class="form-error" id="payout-error" role="alert" hidden></div>
   </form>
-
-  <h2 class="section-title">Connected accounts</h2>
-  <div class="panel panel-pad">
-    <p class="dim small" style="margin-top:0">Connecting lets us read your view counts straight from TikTok and Instagram, so they're more accurate. YouTube doesn't need to be connected.</p>
-    <div class="connections" id="connections"></div>
-  </div>
 </main>
 
 <script src="config.js"></script>
@@ -146,52 +140,7 @@
     save('payout-form', 'payout-error', body, 'Payout method saved.');
   });
 
-  async function loadConnections() {
-    const el = $('connections');
-    el.innerHTML = UI.loading();
-    try {
-      const { data } = await Api.get('/connections');
-      el.innerHTML = ['tiktok', 'instagram'].map(platform => {
-        const c = data.find(x => x.platform === platform);
-        return `<div class="connection">
-          <div>
-            <div style="font-weight:500">${UI.PLATFORM[platform]}</div>
-            <div class="small muted">${c ? `Connected as @${UI.esc(c.platform_username)} · ${UI.date(c.connected_at)}` : 'Not connected'}</div>
-          </div>
-          ${c ? `<button class="btn btn-ghost btn-sm btn-danger" data-disconnect="${platform}">Disconnect</button>`
-              : `<button class="btn btn-sm" data-connect="${platform}">Connect</button>`}
-        </div>`;
-      }).join('');
-    } catch (error) { el.innerHTML = UI.failed(error); }
-  }
-
-  $('connections').addEventListener('click', async (event) => {
-    const connect = event.target.closest('[data-connect]');
-    const disconnect = event.target.closest('[data-disconnect]');
-    try {
-      if (connect) {
-        connect.disabled = true;
-        const { authorize_url } = await Api.post(`/connections/${connect.dataset.connect}/start`);
-        location.href = authorize_url;
-      } else if (disconnect && confirm(`Disconnect ${UI.PLATFORM[disconnect.dataset.disconnect]}?`)) {
-        await Api.del(`/connections/${disconnect.dataset.disconnect}`);
-        UI.toast('Disconnected.');
-        loadConnections();
-      }
-    } catch (error) {
-      UI.toast(UI.errorMessage(error), 'error');
-      if (connect) connect.disabled = false;
-    }
-  });
-
-  // Back from the OAuth redirect (CONTRACT.md §4).
-  const params = new URLSearchParams(location.search);
-  if (params.get('connected')) UI.toast(`${UI.PLATFORM[params.get('connected')] || 'Account'} connected.`);
-  if (params.get('error')) UI.toast("Couldn't connect that account. Please try again.", 'error');
-  if (params.has('connected') || params.has('error')) history.replaceState(null, '', 'settings.html');
-
   Api.get('/me').then(({ creator: c }) => fill(c)).catch(error => UI.toast(UI.errorMessage(error), 'error'));
-  loadConnections();
 </script>
 </body>
 </html>

@@ -1,10 +1,12 @@
-# Edgeform Affiliate System — Shared Contract (v2)
+# Edgeform Affiliate System — Shared Contract (v3)
 
 Source of truth for BOTH builds. An identical copy lives in both repos:
-- **CRM agent** → `edgeform-crm` (Cloudflare Worker `edgeform-crm-api` + D1 `edgeform-crm` + static admin UI at crm.edgeformmarketing.com). Owns the database, admin UI, view polling, earnings, payouts, and the affiliate API.
+- **CRM agent** → `edgeform-crm` (Cloudflare Worker `edgeform-crm-api` + D1 `edgeform-crm` + static admin UI at crm.edgeformmarketing.com). Owns the database, admin UI, weekly view counting, earnings, payouts, and the affiliate API.
 - **Portal agent** → `affiliate.edgeformmarketing.com` (static HTML/CSS/vanilla JS, same style as the CRM). Affiliate-facing UI only. Talks to the CRM Worker through the API in §4 and never touches D1.
 
 **Rule:** nobody renames or removes a table, column, enum value, endpoint, or JSON key in this file without updating this file in BOTH repos first and telling the user. Adding things is fine.
+
+**v3 change (this revision):** view counting is no longer automated. Every Sunday 10pm ET, Edgeform staff manually record each video's **new views since last week**, on every platform, reading the number straight off the platform in its own rounded/compact form (e.g. `184.3K`) — that rounded number is what pay is calculated from. There's no more fixed per-video tracking window: a video keeps earning every week for as long as its campaign is `active`, and locks with one final count the week the campaign stops being active. Automated polling (YouTube API, TikTok/Instagram OAuth or scraper) and the "Connect account" flow are dropped, not deferred. Payouts now run weekly and are sent externally (Remitly, Zelle, etc.); the CRM just logs that it happened. Who funds a campaign's payouts (Edgeform itself vs. the operation's client) is fixed once, at campaign creation — this is CRM-internal accounting and is never sent to the portal. **`edgeform-crm` needs this same update.**
 
 ---
 
@@ -34,10 +36,11 @@ channel_type:       email | affiliate
 platform:           tiktok | instagram | youtube
 assignment_status:  invited | active | removed
 video_status:       pending_review | approved | rejected | removed | locked
-view_source:        api | oauth | scraper | manual
+view_source:        manual   (api | oauth | scraper retired in v3 — may still exist on old rows, never written going forward)
 payout_status:      pending | approved | paid | failed
-payout_method:      paypal | wise | bank | manual
-flag_type:          handle_mismatch | fetch_failed | video_unavailable | suspicious_spike
+payout_method:      paypal | wise | bank | remitly | zelle | manual
+funded_by:          edgeform | client    (campaigns only; CRM-internal accounting, never sent to the portal)
+flag_type:          handle_mismatch | video_unavailable | suspicious_spike   (fetch_failed retired — nothing auto-fetches anymore)
 ```
 
 ---
@@ -82,8 +85,9 @@ Portal login key = `creators.email`, matched case-insensitively. `email` isn't u
 | max_payout_per_video_cents | INTEGER NULL | |
 | max_payout_per_affiliate_cents | INTEGER NULL | |
 | total_budget_cents | INTEGER NULL | |
-| view_tracking_window_days | INTEGER NOT NULL DEFAULT 30 | |
-| min_views_to_qualify | INTEGER NULL | |
+| funded_by | TEXT NOT NULL DEFAULT 'edgeform' | funded_by enum. Set once at creation. CRM-internal, never sent to the portal. |
+| view_tracking_window_days | INTEGER NOT NULL DEFAULT 30 | **Retired in v3, ignore.** No more fixed window — a video counts every week for as long as the campaign is `active`. |
+| min_views_to_qualify | INTEGER NULL | Checked against a video's cumulative views at each weekly count, not per-week views |
 | requires_video_approval | INTEGER NOT NULL DEFAULT 1 | |
 | created_by | TEXT NULL → users.id | |
 | created_at / updated_at | TEXT NOT NULL | |
@@ -111,19 +115,8 @@ New campaigns get both channels. `email` is a placeholder tab with no logic yet.
 
 `effective_cpm_rate_cents = COALESCE(cpm_rate_override_cents, campaigns.default_cpm_rate_cents)`
 
-### creator_platform_connections (OAuth for TikTok and Instagram, built in phase 4)
-| column | type |
-|---|---|
-| id | TEXT PK |
-| creator_id | TEXT NOT NULL → creators.id CASCADE |
-| platform | TEXT NOT NULL (UNIQUE with creator_id) |
-| platform_user_id | TEXT NOT NULL |
-| platform_username | TEXT NOT NULL |
-| access_token_encrypted | TEXT NOT NULL |
-| refresh_token_encrypted | TEXT NULL |
-| token_expires_at | TEXT NULL |
-| connected_at | TEXT NOT NULL |
-| revoked_at | TEXT NULL |
+### ~~creator_platform_connections~~ — retired in v3
+Was planned for a future OAuth-based auto-read of TikTok/Instagram views. Dropped for good now that counting is manual every week on every platform — there's nothing for a connected account to feed. Don't build this table.
 
 ### videos
 | column | type | notes |
@@ -139,22 +132,22 @@ New campaigns get both channels. `email` is a placeholder tab with no logic yet.
 | thumbnail_url | TEXT NULL | |
 | caption | TEXT NULL | |
 | posted_at | TEXT NULL | |
-| status | TEXT NOT NULL | video_status. Starts as `pending_review` if the campaign requires approval, otherwise `approved` |
+| status | TEXT NOT NULL | video_status. Starts as `pending_review` if the campaign requires approval, otherwise `approved`. Moves to `locked` on the one final weekly count taken the week its campaign leaves `active` |
 | rejection_reason | TEXT NULL | |
 | submitted_at | TEXT NOT NULL | |
 | approved_at | TEXT NULL | |
 | approved_by | TEXT NULL → users.id | |
-| tracking_ends_at | TEXT NOT NULL | submitted_at + view_tracking_window_days |
-| locked_at | TEXT NULL | |
-| latest_view_count | INTEGER NOT NULL DEFAULT 0 | |
-| billable_views | INTEGER NOT NULL DEFAULT 0 | frozen when the video locks |
-| earned_cents | INTEGER NOT NULL DEFAULT 0 | cached, can always be recomputed |
-| last_fetched_at | TEXT NULL | |
-| next_fetch_at | TEXT NULL | used by the scheduled job |
-| consecutive_fetch_failures | INTEGER NOT NULL DEFAULT 0 | |
+| ~~tracking_ends_at~~ | — | **Retired in v3.** No fixed end — counts weekly for as long as the campaign is `active` |
+| locked_at | TEXT NULL | set to the Sunday of the campaign's final count |
+| latest_view_count | INTEGER NOT NULL DEFAULT 0 | running cumulative total, incremented by `new_views` at each weekly count |
+| billable_views | INTEGER NOT NULL DEFAULT 0 | always equal to `latest_view_count` (kept as a separate field for API stability; nothing "freezes" separately from the cumulative total anymore) |
+| earned_cents | INTEGER NOT NULL DEFAULT 0 | running cumulative total, increased by that week's payout (after caps) at each weekly count |
+| last_fetched_at | TEXT NULL | timestamp of the most recent weekly count entry |
+| ~~next_fetch_at~~ / ~~consecutive_fetch_failures~~ | — | **Retired in v3.** No scheduled job anymore — counting happens every Sunday for every non-locked video on an active campaign |
 
-### view_snapshots (append-only, never update or delete)
-`id TEXT PK, video_id TEXT NOT NULL → videos.id CASCADE, view_count INTEGER NOT NULL, like_count INTEGER NULL, comment_count INTEGER NULL, source TEXT NOT NULL (view_source), fetched_at TEXT NOT NULL, raw_response TEXT NULL (JSON), entered_by TEXT NULL → users.id, note TEXT NULL`
+### view_snapshots (append-only, never update or delete — now the weekly counting ledger)
+`id TEXT PK, video_id TEXT NOT NULL → videos.id CASCADE, view_count INTEGER NOT NULL, new_views INTEGER NOT NULL, earned_cents INTEGER NOT NULL, like_count INTEGER NULL, comment_count INTEGER NULL, source TEXT NOT NULL (view_source), fetched_at TEXT NOT NULL, raw_response TEXT NULL (JSON), entered_by TEXT NULL → users.id, note TEXT NULL`
+One row per video per Sunday count. `view_count` = cumulative total after this entry (matches `videos.latest_view_count` at that point). `new_views` = the delta staff entered that week, already in the platform's rounded/compact form. `earned_cents` = this video's payout for that week specifically, after caps — sums to `videos.earned_cents`.
 
 ### video_flags
 `id TEXT PK, video_id TEXT NOT NULL → videos.id CASCADE, type TEXT NOT NULL (flag_type), details TEXT NOT NULL DEFAULT '', created_at TEXT NOT NULL, resolved_at TEXT NULL, resolved_by TEXT NULL → users.id`
@@ -181,27 +174,33 @@ Log: rate changes, manual view entries, approvals and rejections, payout status 
 ## 3. Formulas (only the CRM computes these; the portal just displays them)
 ```
 earning_statuses = approved, locked       (everything else earns 0)
-views            = status == locked ? billable_views : latest_view_count
-if min_views_to_qualify is set and views < min_views_to_qualify → 0
-raw_cents        = floor(views * effective_cpm_rate_cents / 1000)
-video_cents      = min(raw_cents, max_payout_per_video_cents ?? ∞)
-then cap the creator's total in the campaign at max_payout_per_affiliate_cents (oldest videos fill first)
-then cap all creators in the campaign at total_budget_cents (oldest videos fill first)
-→ store the result in videos.earned_cents
+views            = videos.latest_view_count   (running cumulative — billable_views always mirrors it)
+earned_cents     = videos.earned_cents         (running cumulative, built up week by week — see Weekly counting below)
 
-earned_cents   (per creator) = Σ earned_cents of locked videos
-pending_cents                = Σ earned_cents of approved videos that aren't locked yet ("estimated, still counting")
+earned_cents   (per creator) = Σ earned_cents of videos with status ∈ {approved, locked}
+pending_cents                = same Σ, but for status = approved only — "earned so far, still actively counting" (already being paid weekly, not just an estimate)
 paid_cents                   = Σ payouts.amount_cents where status = paid
 owed_cents                   = earned_cents − paid_cents
 ```
 
-### Polling (runs inside the existing every-minute `scheduled()` as `affiliateViewsCron(env)`)
-- Each tick picks up to 25 videos with status `approved`, `next_fetch_at <= now`, and `tracking_ends_at > now`.
-- Schedule: every 6 hours for the first 72 hours after submission, then every 24 hours.
-- Once `tracking_ends_at` has passed: take a final fetch, then set `billable_views = latest_view_count`, `status = locked`, `locked_at = now`, and recompute earnings.
-- 3 failures in a row → add a `fetch_failed` flag. If the video is deleted or private → status `removed` and a `video_unavailable` flag. Never zero out earnings automatically.
-- If views jump more than 300% in 24 hours while likes grow less than 0.5% of the new views → add a `suspicious_spike` flag.
-- Providers: YouTube Data API v3 (`YOUTUBE_API_KEY` secret), TikTok and Instagram through OAuth, with Apify as the fallback (`APIFY_TOKEN` secret). Choose the provider per platform with vars `VIEW_PROVIDER_TIKTOK`, `VIEW_PROVIDER_INSTAGRAM` = `oauth` | `scraper`.
+### Weekly counting (manual, replaces automated polling — v3)
+- **Every Sunday 10pm ET**, Edgeform staff record **new views since last week** for every video with status `approved` on a campaign that's `active`, on whatever platform it's on. The number entered is read straight off the platform in its own rounded/compact display (e.g. Instagram's `184.3K`) — that rounded number is used for the pay calculation, not a more precise one.
+- Per video, per week:
+  1. `new_views` = the staff-entered delta for that week.
+  2. If `min_views_to_qualify` is set and `latest_view_count + new_views < min_views_to_qualify`, this week earns `0` (still record the snapshot; the view count still accumulates).
+  3. `raw_cents = floor(new_views * effective_cpm_rate_cents / 1000)`.
+  4. Cap against what's left of `max_payout_per_video_cents` for this video (`cap − earned_cents so far`), if set.
+  5. Then cap against what's left of `max_payout_per_affiliate_cents` for this creator in the campaign, then `total_budget_cents` for the campaign — same "oldest videos fill first" ordering as before, applied to that week's allocation across videos.
+  6. `videos.latest_view_count += new_views`; `videos.billable_views = videos.latest_view_count`; `videos.earned_cents += video_cents`; `videos.last_fetched_at = now`.
+  7. Append a `view_snapshots` row: `new_views`, `view_count` (the new cumulative total), `earned_cents` (this week's amount), `source = 'manual'`, `entered_by`.
+- **`paused` is a hold, not an end.** While a campaign is `paused`, its videos just don't get a weekly count — no new count, no earnings that week, nothing locks. Money already earned in prior weeks is unaffected and still flows through the normal weekly payout cycle regardless of campaign status. If the campaign goes back to `active`, counting resumes the next Sunday as if nothing happened.
+- **Campaign ends:** the first Sunday count that falls on or after a campaign becomes `ended` (not `paused`) is that video's **final** count — same steps as above, then `status = 'locked'`, `locked_at = now`. No further counts happen for it, even if the campaign somehow reactivates.
+- If the video is confirmed deleted or private, status → `removed` and a `video_unavailable` flag; never zero out earnings automatically.
+- A `suspicious_spike` flag is still available for staff to raise manually if a week's jump looks implausible — no automatic trigger now that there's no continuous polling to compare against.
+
+### Weekly payouts
+- Shortly after each Sunday's counting finishes, one `payouts` row is created per **(creator, week, campaign's `funded_by`)** — a creator earning from both an Edgeform-funded and a client-funded campaign in the same week gets two separate payout records, since the money comes from two different places and each needs its own external reference.
+- Payment itself happens outside the CRM (Remitly, Zelle, etc.); staff mark the payout `paid` with `payment_method` and `payment_reference` once it's sent. Funding-source accounting (incoming from clients, outgoing to affiliates) lives in the CRM's own ledger — out of scope for this contract and never exposed to the portal.
 
 ---
 
@@ -237,11 +236,8 @@ The invite email (sent when an admin adds an affiliate to a campaign) links to `
 POST error codes: `invalid_url`, `unsupported_platform`, `platform_not_allowed`, `duplicate_video`, `campaign_not_active`, `not_assigned`.
 The server follows short links (vm.tiktok.com, youtu.be, instagram share links) before it reads the ID.
 
-### Platform connections (phase 4. Until then `GET` returns `data: []` and `/start` returns `501` with code `not_available`)
-| GET | /connections | → `{ ok, data: [{ platform, platform_username, connected_at }] }` |
-| POST | /connections/:platform/start | → `{ ok, authorize_url }`. The portal sends the browser to that URL |
-| DELETE | /connections/:platform | → `{ ok: true }` |
-The OAuth callback lands on the Worker, which then redirects to `https://affiliate.edgeformmarketing.com/settings.html?connected=<platform>` or `?error=<code>`.
+### ~~Platform connections~~ — retired in v3
+No OAuth, no `/connections/*` endpoints. Views are counted manually every week on every platform (§3). If the settings page still shows anything about connected accounts, it should be removed.
 
 ### Earnings and payouts
 | GET | /earnings | → `{ ok, earnings: Earnings }` |
@@ -260,12 +256,12 @@ The OAuth callback lands on the Worker, which then redirects to `https://affilia
   "video_count", "total_views", "earned_cents", "pending_cents" }
 
 // CampaignDetail = CampaignSummary plus
-{ "brief", "view_tracking_window_days", "min_views_to_qualify",
+{ "brief", "min_views_to_qualify",
   "max_payout_per_video_cents", "requires_video_approval" }
 
 // Video
 { "id", "campaign_id", "submitted_url", "canonical_url", "platform", "thumbnail_url", "caption",
-  "posted_at", "status", "rejection_reason", "submitted_at", "tracking_ends_at", "locked_at",
+  "posted_at", "status", "rejection_reason", "submitted_at", "locked_at",
   "latest_view_count", "billable_views", "earned_cents", "last_fetched_at" }
 
 // Earnings
@@ -277,7 +273,7 @@ The OAuth callback lands on the Worker, which then redirects to `https://affilia
   "payment_reference", "paid_at",
   "line_items": [ { "video_id", "campaign_id", "campaign_name", "canonical_url", "billable_views", "cpm_rate_cents", "amount_cents" } ] }
 ```
-Never sent to the portal: creator notes, `roster_status`, `payout_details_encrypted`, OAuth tokens, `raw_response`, flags, audit log, other creators' data.
+Never sent to the portal: creator notes, `roster_status`, `payout_details_encrypted`, `raw_response`, flags, audit log, `campaigns.funded_by`, other creators' data.
 
 ---
 
@@ -285,12 +281,12 @@ Never sent to the portal: creator notes, `roster_status`, `payout_details_encryp
 | CRM agent (`edgeform-crm`) | Portal agent (`affiliate.edgeformmarketing.com`) |
 |---|---|
 | Migrations for §2 | Static site: `index.html` (login), `verify.html`, `dashboard.html`, `campaign.html?id=`, `payouts.html`, `settings.html` |
-| Campaigns section on marketing operations (Email tab placeholder, Affiliate tab) | Magic-link login and session in localStorage |
+| Campaigns section on marketing operations (Email tab placeholder, Affiliate tab), incl. `funded_by` at creation | Magic-link login and session in localStorage |
 | Add affiliate: choose from Creators, or create one inline (which adds them to Creators) + invite email | Campaign list and detail pages |
 | "Assigned to" column and campaign filter on the Creators list | Add Video flow, with a clear message for every error code |
-| `worker/affiliate.js` serving all of §4 | Video table: status, views, earnings, tracking countdown |
+| `worker/affiliate.js` serving all of §4 | Video table: status, cumulative views, earnings, "last counted / next Sunday" note |
 | URL parsing, short-link resolving, duplicate check | Earnings dashboard and payout history |
-| View providers + `affiliateViewsCron` + earnings calculation + locking + flags | Settings: profile, payout method, Connect TikTok/Instagram |
-| Admin: video review queue, flags, manual view entry, payouts, CSV export, audit log | `mock-api.js` that follows §4 exactly, turned on with `?mock=1`, so the portal can be built before the CRM API is live |
+| Weekly manual view-count entry screen (every Sunday), earnings calculation + caps + locking on campaign end, flags | Settings: profile, payout method (no account connections) |
+| Weekly payout batch generation per (creator, week, `funded_by`), payment methods incl. Remitly/Zelle, incoming/outgoing accounting ledger, CSV export, audit log | `mock-api.js` that follows §4 exactly, turned on with `?mock=1`, so the portal can be built before the CRM API is live |
 
 **Sync point:** once the CRM's `/api/affiliate/v1` is deployed, the portal's `API_BASE` in `config.js` points at it and nothing else changes.

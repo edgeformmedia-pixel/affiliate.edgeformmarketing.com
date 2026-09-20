@@ -46,13 +46,13 @@
     summaryEl.innerHTML = `
       <div class="stats fade-in">
         <div class="stat"><div class="kicker">Owed to you</div><div class="stat-val">${UI.money(e.owed_cents, e.currency)}</div></div>
-        <div class="stat"><div class="kicker">Still counting</div><div class="stat-val">${UI.money(e.pending_cents, e.currency)}</div></div>
+        <div class="stat"><div class="kicker">Still active</div><div class="stat-val">${UI.money(e.pending_cents, e.currency)}<span class="small muted"> of earned</span></div></div>
         <div class="stat"><div class="kicker">Paid so far</div><div class="stat-val">${UI.money(e.paid_cents, e.currency)}</div></div>
         <div class="stat"><div class="kicker">Paid to</div><div class="stat-val" style="font-size:16px;margin-top:9px">${method}</div></div>
       </div>`;
     const rows = e.by_campaign.filter(c => c.earned_cents || c.pending_cents || c.paid_cents);
     byCampaignEl.innerHTML = rows.length ? `<div class="table-wrap"><table>
-      <thead><tr><th>Campaign</th><th class="num">Final</th><th class="num">Still counting</th><th class="num">Paid</th><th class="num">Owed</th></tr></thead>
+      <thead><tr><th>Campaign</th><th class="num">Earned</th><th class="num">Still active</th><th class="num">Paid</th><th class="num">Owed</th></tr></thead>
       <tbody>${rows.map(c => `<tr>
         <td><a href="campaign.html?id=${encodeURIComponent(c.campaign_id)}">${UI.esc(c.campaign_name)}</a></td>
         <td class="num">${UI.money(c.earned_cents, e.currency)}</td>
