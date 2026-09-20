@@ -61,7 +61,8 @@
 
   <section id="instagram-section" hidden>
     <h2 class="section-title">Instagram</h2>
-    <div class="panel panel-pad" id="instagram"></div>
+    <!-- Not id="instagram": the profile form above already uses that id for the handle input. -->
+    <div class="panel panel-pad" id="ig-panel"></div>
   </section>
 </main>
 
@@ -147,7 +148,7 @@
 
   // Instagram connection (CONTRACT.md §8). Optional, and read-only: it only lets Edgeform see the
   // view counts on your own posts — which is the only way trial reel views can be counted at all.
-  const igEl = $('instagram');
+  const igEl = $('ig-panel');
 
   function renderInstagram(state) {
     if (state.connected) {
