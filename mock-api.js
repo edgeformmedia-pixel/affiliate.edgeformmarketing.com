@@ -81,7 +81,7 @@
         video_ids: [springVideo.id]
       }
     ];
-    return { creator, campaigns, assignments, videos, view_snapshots, payouts, screenshots: [], sessions: [] };
+    return { creator, campaigns, assignments, videos, view_snapshots, payouts, screenshots: [], instagram: null, sessions: [] };
   }
 
   function canonical(platform, id, handle) {
@@ -402,6 +402,19 @@
       db.screenshots.splice(i, 1);
       return ok();
     }],
+    // --- Instagram connections (CONTRACT.md §8) ---
+    ['GET', /^\/connections$/, (db) => ok({ available: true, instagram: db.instagram || {
+      connected: false, username: null, connected_at: null, last_synced_at: null, expires_at: null, needs_reconnect: false, error: null
+    } })],
+    ['POST', /^\/connections\/instagram\/start$/, (db) => {
+      // No real OAuth in demo mode: pretend the round trip already happened.
+      db.instagram = {
+        connected: true, username: db.creator.instagram || 'jordanrivera', connected_at: iso(Date.now()),
+        last_synced_at: iso(Date.now()), expires_at: iso(Date.now() + 60 * DAY), needs_reconnect: false, error: null
+      };
+      return ok({ authorize_url: 'settings.html?instagram=connected' });
+    }],
+    ['DELETE', /^\/connections\/instagram$/, (db) => { db.instagram = null; return ok(); }],
     ['GET', /^\/earnings$/, (db) => ok({
       earnings: {
         currency: 'USD', ...totals(db),
