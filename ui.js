@@ -22,6 +22,9 @@
     for (const [unit, ms] of units) if (abs >= ms || unit === 'minute') return rtf.format(Math.round(diff / ms), unit);
   }
 
+  // 500 bps → "5%", 550 → "5.5%" (CONTRACT.md §6 basis points).
+  const percentBps = (bps) => `${new Intl.NumberFormat('en-US', { maximumFractionDigits: 2 }).format((bps || 0) / 100)}%`;
+
   const PLATFORM = { tiktok: 'TikTok', instagram: 'Instagram', youtube: 'YouTube' };
 
   const VIDEO_STATUS = {
@@ -105,5 +108,5 @@
   const loading = (label = 'Loading…') => `<div class="state"><span class="spinner"></span>${esc(label)}</div>`;
   const failed = (error) => `<div class="state state-error">${esc(errorMessage(error))}</div>`;
 
-  window.UI = { esc, money, number, compact, date, relative, PLATFORM, VIDEO_STATUS, CAMPAIGN_STATUS, PAYOUT_STATUS, PAYOUT_METHOD, pill, errorMessage, shell, toast, loading, failed };
+  window.UI = { esc, money, percentBps, number, compact, date, relative, PLATFORM, VIDEO_STATUS, CAMPAIGN_STATUS, PAYOUT_STATUS, PAYOUT_METHOD, pill, errorMessage, shell, toast, loading, failed };
 })();

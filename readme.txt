@@ -6,5 +6,7 @@ Static site: plain HTML/CSS/JS, no build step. Talks to the CRM Worker's /api/af
 - mock-api.js    sample-data stand-in for the API; add ?mock=1 to any URL (?mock=0 to turn off)
 - ui.js          formatting, header, error copy
 - Pages: index (login), verify (magic link), dashboard, campaign, payouts, settings
+- The public campaign application page is NOT here: it lives on the main site at
+  edgeformmarketing.com/apply/ (CONTRACT.md §9). campaign.html only shows the affiliate's share link to it.
 
 Run locally: npx http-server -p 5500 -c-1  → http://localhost:5500/?mock=1

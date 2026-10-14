@@ -83,7 +83,19 @@
           <div class="kicker" style="margin-bottom:12px">How you get paid</div>
           <dl class="rules">${rules.map(([k, v]) => `<div><dt>${k}</dt><dd>${UI.esc(v)}</dd></div>`).join('')}</dl>
         </div>
-      </div>`;
+      </div>
+      ${c.share_url ? `
+      <div class="panel panel-pad share${fade}" style="margin-top:12px">
+        <div class="kicker">Share this campaign</div>
+        <div class="share-row">
+          <input class="input" id="share-url" readonly value="${UI.esc(c.share_url)}" aria-label="Your link to this campaign's application page">
+          <button class="btn btn-ghost" type="button" id="share-copy">Copy link</button>
+        </div>
+        <div class="hint">${c.team_bonus_bps > 0
+          ? `Creators you bring in earn their own pay; you earn a ${UI.esc(UI.percentBps(c.team_bonus_bps))} team bonus on their views, paid by Edgeform on top of what they get.`
+          : 'Know a creator who would be a good fit? Send them this link. Every application is reviewed by Edgeform.'}</div>
+      </div>` : ''}`;
+    wireShare();
 
     const accepting = c.status === 'active';
     document.getElementById('add-form').hidden = !accepting;
@@ -91,6 +103,21 @@
       ? `In ${c.platforms_allowed.map(p => UI.PLATFORM[p]).join(' / ')}, tap <strong>Share → Copy link</strong> on your posted video, then paste it above.`
       : `This campaign isn't accepting new videos.`;
     document.getElementById('videos-section').hidden = false;
+  }
+
+  function wireShare() {
+    const btn = document.getElementById('share-copy');
+    if (!btn) return;
+    btn.addEventListener('click', async () => {
+      const input = document.getElementById('share-url');
+      try {
+        await navigator.clipboard.writeText(input.value);
+      } catch {
+        input.select();
+        document.execCommand('copy');
+      }
+      UI.toast('Link copied.');
+    });
   }
 
   // Views are counted every Sunday 10pm ET (CONTRACT.md §3) — no per-video end date to show anymore.

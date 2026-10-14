@@ -1,11 +1,15 @@
 // In-browser stand-in for the CRM's affiliate API, following CONTRACT.md §4 exactly (v3: weekly manual counting).
 // Only used when the page runs with ?mock=1. State persists in localStorage so added videos stick.
 (function () {
-  const DB_KEY = 'efa_mock_db_v6';
+  const DB_KEY = 'efa_mock_db_v7';
   const SESSION_TOKEN = 'mock-session';
   const LOGIN_TOKEN = 'mock-token';
   const DAY = 86400000;
   const WEEK = 7 * DAY;
+
+  // The public application pages live on the main site (CONTRACT.md §9).
+  const APPLY_URL = 'https://edgeformmarketing.com/apply/';
+  const REF_CODE = 'JRV7K2QX';
 
   const iso = (ms) => new Date(ms).toISOString();
   const date = (ms) => iso(ms).slice(0, 10);
@@ -24,21 +28,24 @@
         platforms_allowed: ['tiktok', 'instagram'], default_cpm_rate_cents: 2500, currency: 'USD',
         max_payout_per_video_cents: 50000, max_payout_per_affiliate_cents: null, total_budget_cents: null,
         min_views_to_qualify: 1000, requires_video_approval: true,
-        brief: 'Show how you use Ulio in your daily routine. Hook in the first 2 seconds, mention the summer launch, and tag @ulio in the caption. Keep it under 60 seconds.'
+        brief: 'Show how you use Ulio in your daily routine. Hook in the first 2 seconds, mention the summer launch, and tag @ulio in the caption. Keep it under 60 seconds.',
+        default_override_bps: 500, public_slug: 'ulio', application_open: true
       },
       {
         id: 'camp-fit', name: 'Edgeform Fitness Drop', status: 'active', start_date: date(t - 12 * DAY), end_date: null,
         platforms_allowed: ['tiktok', 'instagram', 'youtube'], default_cpm_rate_cents: 1500, currency: 'USD',
         max_payout_per_video_cents: null, max_payout_per_affiliate_cents: 200000, total_budget_cents: null,
         min_views_to_qualify: null, requires_video_approval: false,
-        brief: 'Film a workout featuring the new drop. Any format works: GRWM, gym vlog, or a quick try-on.'
+        brief: 'Film a workout featuring the new drop. Any format works: GRWM, gym vlog, or a quick try-on.',
+        default_override_bps: 500, public_slug: 'fitness-drop', application_open: false
       },
       {
         id: 'camp-spring', name: 'Spring Creator Push', status: 'ended', start_date: date(t - 120 * DAY), end_date: date(t - 60 * DAY),
         platforms_allowed: ['tiktok'], default_cpm_rate_cents: 2000, currency: 'USD',
         max_payout_per_video_cents: null, max_payout_per_affiliate_cents: null, total_budget_cents: null,
         min_views_to_qualify: null, requires_video_approval: true,
-        brief: 'Spring collection unboxing.'
+        brief: 'Spring collection unboxing.',
+        default_override_bps: 500, public_slug: null, application_open: false
       }
     ];
     const assignments = [
@@ -254,7 +261,9 @@
       platforms_allowed: c.platforms_allowed, cpm_rate_cents: rateFor(db, c), currency: c.currency,
       assignment_status: a.status, video_count: vids.length,
       total_views: vids.filter(v => v.status === 'approved' || v.status === 'locked').reduce((s, v) => s + v.latest_view_count, 0),
-      earned_cents: t.earned_cents, pending_cents: t.pending_cents
+      earned_cents: t.earned_cents, pending_cents: t.pending_cents,
+      share_url: c.application_open ? `${APPLY_URL}?c=${encodeURIComponent(c.public_slug)}&r=${REF_CODE}` : null,
+      team_bonus_bps: c.default_override_bps
     };
   }
 
